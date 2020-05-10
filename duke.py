@@ -1,6 +1,16 @@
 import pytest
 
+import enum
+
 INDENTED_HORIZONTAL_LINE = "\t" + ("_" * 50)
+HELP_TEXT = ("Commands:\n"
+             "\ttodo\n"
+             "\tdeadline\n"
+             "\tevent\n"
+             "\tlist\n"
+             "\tdone\n"
+             "\tdelete\n"
+             "\tbye")
 
 
 class AlreadyDone(Exception):
@@ -8,13 +18,33 @@ class AlreadyDone(Exception):
     pass
 
 
-def output_text(*text_args):
+@enum.unique
+class TaskType(enum.Enum):
+    TODO = "todo"
+    DEADLINE = "deadline"
+    EVENT = "event"
+
+
+def prepend_tab(text):
+    text_lines = text.split("\n")
+    tabbed_lines = ["\t" + line for line in text_lines]
+    tabbed_text = "\n".join(tabbed_lines)
+    return tabbed_text
+
+
+def output_text(*text_args, print_help_text=False):
     print(INDENTED_HORIZONTAL_LINE)
     for text in text_args:
-        text_lines = text.split("\n")
-        for line in text_lines:
-            print("\t" + line)
+        print(prepend_tab(text))
+    if print_help_text:
+        if len(text_args) > 0:
+            print()
+        print(prepend_tab(HELP_TEXT))
     print(INDENTED_HORIZONTAL_LINE)
+
+
+def output_help_text():
+    output_text(print_help_text=True)
 
 
 def greet():
@@ -36,95 +66,233 @@ class Task:
             raise AlreadyDone("Task already completed")
         self.is_done = True
 
-    def get_name(self):
+    def get_desc(self):
         return self.task_name
 
     def get_completed_status(self):
         return self.is_done
 
-    pass
+
+class Todo(Task):
+    TYPE_REPR = "T"
 
 
-class Tasks:
+class Deadline(Task):
+    TYPE_REPR = "D"
+
+    def __init__(self, task_name, deadline):
+        Task.__init__(self, task_name)
+        self.deadline = deadline
+
+    def get_desc(self):
+        return f"{self.task_name} (by: {self.deadline})"
+
+
+class Event(Task):
+    TYPE_REPR = "E"
+
+    def __init__(self, task_name, date_time):
+        Task.__init__(self, task_name)
+        self.date_time = date_time
+
+    def get_desc(self):
+        return f"{self.task_name} (at: {self.date_time})"
+
+
+class TaskList:
     def __init__(self):
-        self.tasks = {}
-        self.num_of_tasks = 0
+        self.tasks = []
+        self.DICT_OF_TASK_TYPES_TO_CLASS = {TaskType.TODO: Todo,
+                                            TaskType.DEADLINE: Deadline,
+                                            TaskType.EVENT: Event}
 
-    def add_task(self, task_name):
-        next_task_num = self.num_of_tasks + 1
-        self.tasks[next_task_num] = Task(task_name)
-        self.num_of_tasks += 1
+    def get_num_of_tasks(self):
+        return len(self.tasks)
 
-    def complete_task(self, task_num):
-        try:
-            self.tasks[task_num].complete()
-            return self.tasks[task_num].get_name()
-        except KeyError:
+    def get_task(self, task_num):
+        if task_num <= 0 or task_num > self.get_num_of_tasks():
             return None
+        task_id = task_num - 1
+        task = self.tasks[task_id]
+        return task
+
+    def add_task(self, task_type, task_name, *args):
+        task_class = self.DICT_OF_TASK_TYPES_TO_CLASS[task_type]
+        new_task = task_class(task_name, *args)
+        self.tasks.append(new_task)
+
+    @staticmethod
+    def complete_task(task):
+        task.complete()
+
+    def delete_task(self, task):
+        self.tasks.remove(task)
+
+    @staticmethod
+    def get_task_info(task):
+        desc = task.get_desc()
+        type_repr = task.TYPE_REPR
+        is_done = task.get_completed_status()
+        if is_done:
+            done_symbol = "✓"
+        else:
+            done_symbol = "✗"
+        return f"[{type_repr}][{done_symbol}] {desc}"
+
+    def get_numbered_task_info(self, task):
+        task_info = self.get_task_info(task)
+        task_id = self.tasks.index(task)
+        task_num = task_id + 1
+        return f"{task_num}.{task_info}"
 
     def get_info(self):
-        return [(i, task.get_name(), task.get_completed_status()) for i, task in self.tasks.items()]
+        return [self.get_numbered_task_info(task) for task in self.tasks]
+
+
+def add_task_to_task_list(task_list, task_type, task_name, *args):
+    task_list.add_task(task_type, task_name, *args)
+    num_tasks = task_list.get_num_of_tasks()
+    task = task_list.get_task(num_tasks)
+    task_info = task_list.get_task_info(task)
+    if num_tasks == 1:
+        num_tasks = "1 task"
+    else:
+        num_tasks = f"{num_tasks} tasks"
+    output_text("Got it. I've added this task:",
+                f"  {task_info}",
+                f"Now you have {num_tasks} in the list.")
+
+
+def add_task_with_additional_parameter(task_list, task_type, command_args, flag):
+    task_type_string = task_type.value
+    try:
+        flag_index = command_args.index(flag)
+    except ValueError:
+        output_text(f"☹ OOPS!!! You need to provide me with a {task_type_string}. Use this format:\n"
+                    f"{task_type_string} [task name] {flag} [{task_type_string}]")
+        return
+    if flag_index == 0:
+        output_text("☹ OOPS!!! You need to provide me with a task name. Use this format:\n"
+                    f"{task_type_string} [task name] {flag} [{task_type_string}]")
+        return
+    if flag_index == len(command_args) - 1:
+        output_text(f"☹ OOPS!!! You need to provide me with a {task_type_string}. Use this format:\n"
+                    f"{task_type_string} [task name] {flag} [{task_type_string}]")
+        return
+    task_name = " ".join(command_args[:flag_index])
+    additional_parameter = " ".join(command_args[flag_index + 1:])
+    add_task_to_task_list(task_list, task_type, task_name, additional_parameter)
+
+
+def add_task(task_list, task_type, command_args):
+    if len(command_args) == 0:
+        output_text("☹ OOPS!!! You need to provide me with a task name.")
+        return
+    if task_type == TaskType.TODO:
+        task_name = " ".join(command_args)
+        add_task_to_task_list(task_list, task_type, task_name)
+    elif task_type == TaskType.DEADLINE:
+        add_task_with_additional_parameter(task_list, task_type, command_args, "/by")
+    elif task_type == TaskType.EVENT:
+        add_task_with_additional_parameter(task_list, task_type, command_args, "/at")
 
 
 def print_tasks(task_list):
+    if task_list.get_num_of_tasks() == 0:
+        output_text("Your task list is empty!")
+        return
     task_list_info = task_list.get_info()
-    tasks = []
-    for i, task_name, is_done in task_list_info:
-        if is_done:
-            symbol = "✓"
-        else:
-            symbol = "✗"
-        tasks.append(f"{i}.[{symbol}] {task_name}")
-    task_list_string = "\n".join(tasks)
+    task_list_string = "\n".join(task_list_info)
     output_text("Here are the tasks in your list:", task_list_string)
 
 
-def extract_num_from_command_suffix(command_suffix):
-    try:
-        if command_suffix[0] != " ":
-            raise ValueError("there should be a space after 'done'")
-        num = int(command_suffix[1:])
-        return num
-    except (IndexError, ValueError):
+def extract_task_num_from_args(command_args):
+    if len(command_args) == 0:
+        output_text("☹ OOPS!!! You need to provide me with a task number.")
         return None
+    if len(command_args) > 1:
+        output_text("☹ OOPS!!! There are too many spaces. Please provide me with a valid task number.")
+        return None
+    try:
+        task_num = int(command_args[0])
+    except ValueError:
+        output_text("☹ OOPS!!! That's not a number!")
+        raise ValueError("Expected a number")
+    if task_num <= 0:
+        output_text("☹ OOPS!!! You need to provide me with a valid task number.")
+        raise ValueError("Expected a valid task number")
+    return task_num
 
 
-def try_to_complete_task(task_list, command):
-    task_num = extract_num_from_command_suffix(command[4:])
-    if task_num is None:
-        output_text("'Done' command should be of the following format:\n"
-                    "\tdone [task number]")
+def get_task(task_list, task_num):
+    task = task_list.get_task(task_num)
+    if task is None:
+        output_text(f"☹ OOPS!!! Task {task_num} does not exist.")
+        raise ValueError("Task does not exist")
+    return task
+
+
+def complete_task(task_list, command_args):
+    try:
+        task_num = extract_task_num_from_args(command_args)
+        task = get_task(task_list, task_num)
+    except ValueError:
+        return
+    try:
+        task_list.complete_task(task)
+    except AlreadyDone:
+        task_info = task_list.get_task_info(task)
+        output_text(f"Task {task_num} has already been completed.\n"
+                    "  " + task_info)
+        return
+    task_info = task_list.get_task_info(task)
+    output_text("Nice! I've marked this task as done:\n"
+                "  " + task_info)
+
+
+def delete_task(task_list, command_args):
+    try:
+        task_num = extract_task_num_from_args(command_args)
+        task = get_task(task_list, task_num)
+    except ValueError:
+        return
+    task_info = task_list.get_task_info(task)
+    task_list.delete_task(task)
+    num_tasks = task_list.get_num_of_tasks()
+    if num_tasks == 1:
+        num_tasks = "1 task"
     else:
-        try:
-            task_name = task_list.complete_task(task_num)
-        except AlreadyDone:
-            output_text(f"Task {task_num} has already been completed.")  # maybe add the task name here
-            return
-        if task_name is None:
-            output_text(f"Task {task_num} does not exist.")
-            return
-        output_text("Nice! I've marked this task as done:\n"
-                    "  [✓] " + task_name)
-
-
-def save_task(task_list, task):
-    task_list.add_task(task)
-    output_text("added: " + task)
+        num_tasks = f"{num_tasks} tasks"
+    output_text("Noted. I've removed this task:\n"
+                "  " + task_info,
+                f"Now you have {num_tasks} in the list.")
 
 
 def handle_user_input():
-    task_list = Tasks()
+    task_list = TaskList()
     while True:
-        command = input()
-        if command == "bye":
+        full_command = input()
+        input_list = full_command.split()
+        try:
+            command = input_list[0]
+            command_args = input_list[1:]
+        except IndexError:
+            command = "error"
+            command_args = None
+        if full_command == "bye":
             say_goodbye()
             return
-        elif command == "list":
+        elif command in ["todo", "deadline", "event"]:
+            add_task(task_list, TaskType(command), command_args)
+        elif full_command == "list":
             print_tasks(task_list)
-        elif command[:4] == "done":
-            try_to_complete_task(task_list, command)
+        elif command == "done":
+            complete_task(task_list, command_args)
+        elif command == "delete":
+            delete_task(task_list, command_args)
+            pass
         else:
-            save_task(task_list, task=command)
+            output_text("☹ OOPS!!! I'm sorry, but I don't know what that means :-(", print_help_text=True)
 
 
 def main():
