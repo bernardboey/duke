@@ -1,5 +1,3 @@
-import pytest
-
 import enum
 
 INDENTED_HORIZONTAL_LINE = "\t" + ("_" * 50)
