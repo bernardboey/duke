@@ -1,5 +1,9 @@
 import enum
+import os
 
+SEP = " | "
+DIR_NAME = os.getcwd()
+FILE_NAME = os.path.join(DIR_NAME, "data", "duke.txt")
 INDENTED_HORIZONTAL_LINE = "\t" + ("_" * 50)
 HELP_TEXT = ("Commands:\n"
              "\ttodo\n"
@@ -70,13 +74,19 @@ class Task:
     def get_completed_status(self):
         return self.is_done
 
+    @staticmethod
+    def get_additional_info():
+        return None
+
 
 class Todo(Task):
     TYPE_REPR = "T"
+    TYPE = TaskType.TODO
 
 
 class Deadline(Task):
     TYPE_REPR = "D"
+    TYPE = TaskType.DEADLINE
 
     def __init__(self, task_name, deadline):
         Task.__init__(self, task_name)
@@ -85,9 +95,13 @@ class Deadline(Task):
     def get_desc(self):
         return f"{self.task_name} (by: {self.deadline})"
 
+    def get_additional_info(self):
+        return self.deadline
+
 
 class Event(Task):
     TYPE_REPR = "E"
+    TYPE = TaskType.EVENT
 
     def __init__(self, task_name, date_time):
         Task.__init__(self, task_name)
@@ -95,6 +109,9 @@ class Event(Task):
 
     def get_desc(self):
         return f"{self.task_name} (at: {self.date_time})"
+
+    def get_additional_info(self):
+        return self.date_time
 
 
 class TaskList:
@@ -118,6 +135,7 @@ class TaskList:
         task_class = self.DICT_OF_TASK_TYPES_TO_CLASS[task_type]
         new_task = task_class(task_name, *args)
         self.tasks.append(new_task)
+        return new_task
 
     @staticmethod
     def complete_task(task):
@@ -125,6 +143,9 @@ class TaskList:
 
     def delete_task(self, task):
         self.tasks.remove(task)
+
+    def delete_all_tasks(self):
+        self.tasks.clear()
 
     @staticmethod
     def get_task_info(task):
@@ -146,9 +167,45 @@ class TaskList:
     def get_info(self):
         return [self.get_numbered_task_info(task) for task in self.tasks]
 
+    def save_tasks(self):
+        with open(FILE_NAME, "w") as file:
+            for task in self.tasks:
+                type_repr = task.TYPE.value
+                is_done = str(int(task.get_completed_status()))
+                task_name = task.task_name
+                file.write(type_repr + SEP + is_done + SEP + task_name)
+                additional_info = task.get_additional_info()
+                if additional_info is None:
+                    file.write("\n")
+                else:
+                    file.write(SEP + additional_info + "\n")
+
+    def parse_tasks(self, lines):
+        try:
+            for line in lines:
+                line = line.rstrip('\n')
+                attributes = line.split(SEP)
+                task_type_string = attributes[0]
+                task_type = TaskType(task_type_string)
+                task_is_done = attributes[1]
+                task_name = attributes[2]
+                if len(attributes) > 3:
+                    task_additional_info = attributes[3]
+                    new_task = self.add_task(task_type, task_name, task_additional_info)
+                else:
+                    new_task = self.add_task(task_type, task_name)
+                if task_is_done == "1":
+                    new_task.complete()
+                elif task_is_done != "0":
+                    raise ValueError("Saved filed is not in the proper format")
+            print("Successfully loaded file.")
+        except (LookupError, ValueError):
+            self.delete_all_tasks()
+            print("Saved filed is not in the proper format. Creating task list from scratch.")
+
 
 def add_task_to_task_list(task_list, task_type, task_name, *args):
-    task_list.add_task(task_type, task_name, *args)
+    _ = task_list.add_task(task_type, task_name, *args)
     num_tasks = task_list.get_num_of_tasks()
     task = task_list.get_task(num_tasks)
     task_info = task_list.get_task_info(task)
@@ -266,8 +323,20 @@ def delete_task(task_list, command_args):
                 f"Now you have {num_tasks} in the list.")
 
 
-def handle_user_input():
+def main():
     task_list = TaskList()
+    try:
+        with open(FILE_NAME) as file:
+            print("Loading task list from file...")
+            if os.stat(FILE_NAME).st_size == 0:
+                raise ValueError()
+            lines = file.readlines()
+            task_list.parse_tasks(lines)
+    except FileNotFoundError:
+        print("No file detected. Creating task list from scratch.")
+    except ValueError:
+        print("File empty. Creating task list from scratch.")
+    greet()
     while True:
         full_command = input()
         input_list = full_command.split()
@@ -282,20 +351,18 @@ def handle_user_input():
             return
         elif command in ["todo", "deadline", "event"]:
             add_task(task_list, TaskType(command), command_args)
+            task_list.save_tasks()
         elif full_command == "list":
             print_tasks(task_list)
         elif command == "done":
             complete_task(task_list, command_args)
+            task_list.save_tasks()
         elif command == "delete":
             delete_task(task_list, command_args)
+            task_list.save_tasks()
             pass
         else:
             output_text("☹ OOPS!!! I'm sorry, but I don't know what that means :-(", print_help_text=True)
-
-
-def main():
-    greet()
-    handle_user_input()
 
 
 if __name__ == "__main__":
