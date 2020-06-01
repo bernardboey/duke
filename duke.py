@@ -1,5 +1,6 @@
 import enum
 import os
+from datetime import datetime
 
 SEP = " | "
 DIR_NAME = os.getcwd()
@@ -90,7 +91,11 @@ class Deadline(Task):
 
     def __init__(self, task_name, deadline):
         Task.__init__(self, task_name)
-        self.deadline = deadline
+        self._deadline = deadline
+
+    @property
+    def deadline(self):
+        return datetime.strftime(self._deadline, "%d %b %Y")
 
     def get_desc(self):
         return f"{self.task_name} (by: {self.deadline})"
@@ -105,7 +110,11 @@ class Event(Task):
 
     def __init__(self, task_name, date_time):
         Task.__init__(self, task_name)
-        self.date_time = date_time
+        self._date_time = date_time
+
+    @property
+    def date_time(self):
+        return datetime.strftime(self._date_time, "%d %b %Y")
 
     def get_desc(self):
         return f"{self.task_name} (at: {self.date_time})"
@@ -218,7 +227,17 @@ def add_task_to_task_list(task_list, task_type, task_name, *args):
                 f"Now you have {num_tasks} in the list.")
 
 
-def add_task_with_additional_parameter(task_list, task_type, command_args, flag):
+def get_date(date_string):
+    for date_format in ("%d/%m/%Y", "%d/%m/%y", "%d %b %Y", "%d %b", "%d-%m-%Y", "%d-%m-%y"):
+        try:
+            date = datetime.strptime(date_string, date_format)
+            return date
+        except ValueError:
+            continue
+    raise ValueError("Date string does not conform to any of the date formats.")
+
+
+def add_task_with_date(task_list, task_type, command_args, flag):
     task_type_string = task_type.value
     try:
         flag_index = command_args.index(flag)
@@ -235,8 +254,13 @@ def add_task_with_additional_parameter(task_list, task_type, command_args, flag)
                     f"{task_type_string} [task name] {flag} [{task_type_string}]")
         return
     task_name = " ".join(command_args[:flag_index])
-    additional_parameter = " ".join(command_args[flag_index + 1:])
-    add_task_to_task_list(task_list, task_type, task_name, additional_parameter)
+    date_string = " ".join(command_args[flag_index + 1:])
+    try:
+        date = get_date(date_string)
+    except ValueError:
+        output_text(f"☹ OOPS!!! The date provided is not valid. It should be dd/mm/yy")
+        return
+    add_task_to_task_list(task_list, task_type, task_name, date)
 
 
 def add_task(task_list, task_type, command_args):
@@ -247,9 +271,9 @@ def add_task(task_list, task_type, command_args):
         task_name = " ".join(command_args)
         add_task_to_task_list(task_list, task_type, task_name)
     elif task_type == TaskType.DEADLINE:
-        add_task_with_additional_parameter(task_list, task_type, command_args, "/by")
+        add_task_with_date(task_list, task_type, command_args, "/by")
     elif task_type == TaskType.EVENT:
-        add_task_with_additional_parameter(task_list, task_type, command_args, "/at")
+        add_task_with_date(task_list, task_type, command_args, "/at")
 
 
 def print_tasks(task_list):
@@ -349,7 +373,7 @@ def main():
         if full_command == "bye":
             say_goodbye()
             return
-        elif command in ["todo", "deadline", "event"]:
+        elif command in ("todo", "deadline", "event"):
             add_task(task_list, TaskType(command), command_args)
             task_list.save_tasks()
         elif full_command == "list":
